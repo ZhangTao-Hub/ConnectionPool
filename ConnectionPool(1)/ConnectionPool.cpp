@@ -26,10 +26,12 @@ std::shared_ptr<Connection> ConnectionPool::getConnection()
 		}
 	}
 
-	// 智能指针包裹，并自定义删除器
+	// 智能指针包裹队头的连接指针，并自定义删除器，用完归还队列
 	std::shared_ptr<Connection> sp(_connectionQue.front(), [&](Connection* p) {
+		// 操作连接队列，第一步就是拿锁
 		std::unique_lock<std::mutex> lock(_mutexQue);
 		_connectionQue.push(p);
+		p->getCurrentTime();											// 存活时间刷新，重新记录
 		++_connectionCnt;
 		});
 	_connectionQue.pop();
@@ -73,7 +75,23 @@ void ConnectionPool::scan()
 {
 	while (1)
 	{
-
+		// 使用sleep_for降低扫描频率
+		std::this_thread::sleep_for(std::chrono::seconds(_maxIdleTime));
+		std::unique_lock<std::mutex> lock(_mutexQue);
+		while (_connectionQue.size() > _initConnectionSize)
+		{
+			Connection* firstConnection = _connectionQue.front();
+			if (firstConnection->getAliveTime() >= _maxIdleTime*1000)
+			{
+				_connectionQue.pop();
+				--_connectionCnt;
+				delete firstConnection;
+			}
+			else 
+			{
+				break;
+			}
+		}
 	}
 }
 
@@ -175,15 +193,14 @@ ConnectionPool::ConnectionPool()
 	}
 
 	// 3、开启生产者线程，生产可用连接
-	std::thread producer(std::bind(ConnectionPool::produce, this));
+	std::thread producer(std::bind(&ConnectionPool::produce, this));
 	producer.detach();
 
 	// 4、开启扫描线程，扫描空闲连接，释放超过最大空闲时间的连接
-	std::thread scanner(std::bind(ConnectionPool::scan, this));
+	std::thread scanner(std::bind(&ConnectionPool::scan, this));
 	scanner.detach();
 
 }
-
 
 // 实现析构函数
 ConnectionPool::~ConnectionPool()

@@ -51,3 +51,8 @@ clock_t Connection::getAliveTime() const
 	return clock_t() - _initTime;
 }
 
+void Connection::getCurrentTime()
+{
+	_initTime = clock_t();
+}
+

@@ -25,4 +25,6 @@ public:
 	// 获取存活时间，默认单位毫秒
 	clock_t getAliveTime() const;
 
+	void getCurrentTime();
+
 };
